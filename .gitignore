@@ -1,0 +1,13 @@
+data/
+.env
+temp/
+certs/*
+!certs/.gitkeep
+!certs/server.crt
+!certs/server.key
+venv/
+
+certbot/*
+!certbot/.gitkeep
+
+__pycache__/

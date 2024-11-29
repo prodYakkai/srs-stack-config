@@ -1,0 +1,90 @@
+version: 3.0.2
+
+services:
+  srs:
+    image: ossrs/srs:6
+    ports:
+      - "1935:1935"
+      - "8000:8000/udp"
+      - "10080:10080/udp"
+    environment:
+      # Env Ref:https://github.com/ossrs/srs/blob/ad7ddde3181f9ad9c4c9225158ac6ec22944c429/trunk/src/app/srs_app_config.cpp#L1922C83-L1922C83
+      SRS_CONFIG_FILE: /opt/conf/origin.conf
+      #CANDIDATE: 172.17.0.1
+    env_file:
+      - ./srs/.env
+    volumes:
+      - ./srs/origin:/opt/conf
+      - ./data:/data
+    restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  
+  srs-dvr:
+    image: ghcr.io/prodYakkai/srs-dvr:main
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./dvr/.env
+    volumes:
+      - ./data:/data
+
+  control-api:
+    image: us-docker.pkg.dev/techprod-cloud-build/docker/srs-key-control:latest
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./control-api/.env
+    volumes:
+      - ./data:/data
+
+  mongo:
+    image: mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root
+    volumes:
+      - mongo-data:/data/db
+
+  nginx:
+    image: nginx:latest
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      srs:
+          condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/templates/:/etc/nginx/templates/
+      - ./certbot/:/etc/letsencrypt/
+      - ./certs/:/etc/nginx/ssl/:ro
+    env_file:
+      - ./nginx/.env
+
+  certbot-prod:
+    image: certbot/dns-cloudflare
+    volumes:
+      - ./certbot:/etc/letsencrypt
+      - ./certbot/creds.ini:/root/creds.ini
+    command: >- 
+      certonly --dns-cloudflare 
+      --dns-cloudflare-credentials /root/creds.ini
+      --dns-cloudflare-propagation-seconds 20
+      --email cert@${DOMAIN}
+      --agree-tos --no-eff-email
+      --keep-until-expiring
+      --non-interactive
+      -d ${DOMAIN}
+      -d *.${DOMAIN}
+    profiles:
+      - certbot
+
+volumes:
+  mongo-data:
+    driver: local
